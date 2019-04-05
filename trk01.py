@@ -5,6 +5,12 @@ import time
 import sys
 import math
 
+stopped = 0
+forward = 1
+backward = 4
+backwardleft = 5
+backwardright = 6
+
 class sensors:
 	def __init__(self):
 		#D0=GPIO16, D1=GPIO5, D2=GPIO4, D3=GPIO0 (https://github.com/nodemcu/nodemcu-devkit-v1.0?ts=4#pin-map)
@@ -20,9 +26,14 @@ class sensors:
 		self.distanceFront = 0
 		self.distanceRight = 0
 		
-		self.distanceIgnore = 200
+		self.distanceIgnore = 150
 		self.distanceCenter = 0
 		self.distanceCenterEscalated = 0
+
+		self.distanceAccelerate = 200
+		self.accelerateSpeed = 0
+		self.stopAtDistance = 100
+		self.startAtDistance = 100
 
 	def read(self):
 		self.distanceLeft = self.vLeft.read()
@@ -30,17 +41,20 @@ class sensors:
 		self.distanceRight = self.vRight.read()
 
 	def analyze(self):
-		diff = self.distanceRight - self.distanceLeft
+		#Cut of distances longer then 200mm
+		diff = min(self.distanceRight, self.distanceIgnore) - min(self.distanceLeft, self.distanceIgnore)
 		diffAbs = diff
 		if diff < 0:
 			diffAbs = diffAbs * -1
-		self.distanceCenter = float(min(diffAbs, self.distanceIgnore)) / self.distanceIgnore
+		self.distanceCenter = float(diffAbs) / self.distanceIgnore
 		self.distanceCenterEscalated = math.sqrt(self.distanceCenter)
 		if diff < 0:
 			self.distanceCenter = self.distanceCenter * -1
 			self.distanceCenterEscalated = self.distanceCenterEscalated * -1
 		#print('Center %f' % self.distanceCenter)
 		#print('Center Escalated %f' % self.distanceCenterEscalated)
+		self.accelerateSpeed = min(self.distanceFront, self.distanceAccelerate) / self.distanceAccelerate
+		#print('Distance accelerate %f %d' % (self.accelerateSpeed, self.distanceFront))
 
 	def __str(self):
 		self.read()
@@ -59,23 +73,12 @@ class motors:
 
 		self.steerGoal = 0 #-1.0 1.0
 		self.steerNow = 0 #-1.0 1.0
-		self.steerRange = 40
+		self.steerRange = 50
 		self.steerCenter = 100
 
 	def regulate(self):
 		self.servoSteering.write_angle(int(self.steerGoal * self.steerRange + self.steerCenter))
-
-		diff = (self.speedGoal * -1) - self.speedNow
-		if diff > 0:
-			self.speedNow += 0.1
-			if self.speedNow > self.speedGoal:
-				self.speedNow = self.speedGoal
-		elif diff < 0:
-			self.speedNow -= 0.1
-			if self.speedNow < self.speedGoal:
-				self.speedNow = self.speedGoal
-		if diff != 0:
-			self.hbridge.write_angle(int(self.speedNow * self.speedRange + self.speedCenter))
+		self.hbridge.write_angle(int((self.speedGoal * self.speedRange * -1) + self.speedCenter))
 
 	def disable(self):
 		self.servoSteering.pwm.deinit()
@@ -85,6 +88,8 @@ class trk01:
 	def __init__(self):
 		self.sensors = sensors()
 		self.motors = motors()
+		self.turns = [0]
+		self.events = [(0, stopped), (0, stopped)]
 		print('TRK-01 loaded')
 
 	def reload(self):
@@ -101,20 +106,76 @@ class trk01:
 		del sys.modules['trk01']
 		#del trk01
 
+	def eventsAdd(self, item):
+		self.events.append((time.ticks_ms(), item))
+		if len(self.events) > 5:
+			self.events.pop(0)
+
+	def turnsAdd(self, item):
+		self.turns.append(item)
+		if len(self.turns) > 20:
+			self.turns.pop(0)
+
 	def decide(self):
-		self.motors.steerGoal = self.sensors.distanceCenterEscalated
+		state = self.events[-1][1]
+		if state==stopped:
+			if True: #Insert startmodule here
+				print('State to forward')
+				self.eventsAdd(forward)
+		elif state==forward:
+			if self.sensors.distanceFront < self.sensors.stopAtDistance:
+				#We must back out, do a avrage of previous turns to decide which turn to make
+				avragePreviousTurns = sum(self.turns) / len(self.turns)
+				print('Avredge previous turns: %f' % avragePreviousTurns)
+				if avragePreviousTurns > 0:
+					print('State to backwardleft')
+					self.eventsAdd(backwardleft)
+				else:
+					print('State to backwardright')
+					self.eventsAdd(backwardright)
+		elif state==backward or state==backwardleft or state==backwardright:
+			if self.sensors.distanceFront > self.sensors.startAtDistance:
+				print('State to forward')
+				self.eventsAdd(forward)
+
+	def act(self):
+		state = self.events[-1][1]
+		if state==stopped:
+			self.motors.steerGoal = 0.0
+			self.motors.speedGoal = 0.0
+		elif state==forward:
+			self.motors.steerGoal = self.sensors.distanceCenterEscalated
+			self.motors.speedGoal = self.sensors.accelerateSpeed
+			#Add turning for statistics
+			self.turnsAdd(self.motors.steerGoal)
+		elif state==backward:
+			self.motors.steerGoal = 0.0
+			self.motors.speedGoal = -1.0
+		elif state==backwardleft:
+			self.motors.steerGoal = -1.0
+			self.motors.speedGoal = -1.0
+		elif state==backwardright:
+			self.motors.steerGoal = 1.0
+			self.motors.speedGoal = -1.0
 
 	def run(self):
 		run = True
 		while run:
 			try:
-				d = time.ticks_ms()
 				self.sensors.read()
 				self.sensors.analyze()
 				self.decide()
+				self.act()
 				self.motors.regulate()
+				#print('')
+				#print(self.events)
+				#print(self.turns)
 				time.sleep(0.1)
 			except KeyboardInterrupt:
+				#Gracfully exit loop
 				run = False
-				self.motors.speedGoal = 0
 				pass
+		#Reset state and turn of motors
+		self.eventsAdd(stopped)
+		self.motors.speedGoal = 0
+		self.motors.disable()
