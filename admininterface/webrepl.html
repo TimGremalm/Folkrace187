@@ -46,7 +46,7 @@
 
 <div style="display:inline-block; vertical-align:top;">
 <form>
-<input type="text" name="webrepl_url" id="url" value="ws://192.168.0.67:8266/" />
+<input type="text" name="webrepl_url" id="url" value="ws://192.168.43.65:8266/" />
 <input type="submit" id="button" value="Connect" onclick="button_click(); return false;" />
 </form>
 <div id="term">
@@ -54,26 +54,25 @@
 </div>
 
 <div id="file-boxes" style="display:inline-block; vertical-align:top; width:230px;">
-
-  <div class="file-box">
-    <strong>Send a file</strong>
-    <input type="file" id="put-file-select" />
-    <div id="put-file-list"></div>
-    <input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" />
-  </div>
-
-  <div class="file-box">
-    <strong>Get a file</strong>
-    <input type="text" name="get_filename" id="get_filename" value="" size="13" />
-    <input type="button" value="Get from device" onclick="get_file(); return false;" />
-  </div>
-
-  <div class="file-box" id="file-status"><span style="color:#707070">(file operation status)</span></div>
-  
 	<div class="file-box">
-		<h1>Folkrace 1:87<br />Admin interface</h1>
+		<h1>Folkrace 1:87</h1>
+		<h3>Admin interface</h3>
 	</div>
 
+	<div class="file-box">
+		<strong>Send a file</strong>
+		<input type="file" id="put-file-select" />
+		<div id="put-file-list"></div>
+		<input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" />
+	</div>
+
+	<div class="file-box">
+		<strong>Get a file</strong>
+		<input type="text" name="get_filename" id="get_filename" value="" size="13" />
+		<input type="button" value="Get from device" onclick="get_file(); return false;" />
+	</div>
+
+	<div class="file-box" id="file-status"><span style="color:#707070">(file operation status)</span></div>
 </div>
 
 <br clear="both" />
