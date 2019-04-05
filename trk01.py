@@ -3,6 +3,7 @@ import vl53l0x
 import servo
 import time
 import sys
+import math
 
 class sensors:
 	def __init__(self):
@@ -21,6 +22,7 @@ class sensors:
 		
 		self.distanceIgnore = 200
 		self.distanceCenter = 0
+		self.distanceCenterEscalated = 0
 
 	def read(self):
 		self.distanceLeft = self.vLeft.read()
@@ -28,8 +30,17 @@ class sensors:
 		self.distanceRight = self.vRight.read()
 
 	def analyze(self):
-		diff = abs()
-		self.distanceCenter = min
+		diff = self.distanceRight - self.distanceLeft
+		diffAbs = diff
+		if diff < 0:
+			diffAbs = diffAbs * -1
+		self.distanceCenter = float(min(diffAbs, self.distanceIgnore)) / self.distanceIgnore
+		self.distanceCenterEscalated = math.sqrt(self.distanceCenter)
+		if diff < 0:
+			self.distanceCenter = self.distanceCenter * -1
+			self.distanceCenterEscalated = self.distanceCenterEscalated * -1
+		#print('Center %f' % self.distanceCenter)
+		#print('Center Escalated %f' % self.distanceCenterEscalated)
 
 	def __str(self):
 		self.read()
@@ -39,9 +50,7 @@ class motors:
 	def __init__(self):
 		#D5=GPIO14, D6=GPIO12
 		self.servoSteering = servo.Servo(machine.Pin(14))
-		self.servoSteering.write_angle(110)
 		self.hbridge = servo.Servo(machine.Pin(12))
-		self.hbridge.write_angle(90)
 
 		self.speedGoal = 0 #-1.0 1.0
 		self.speedNow = 0 #-1.0 1.0
@@ -50,21 +59,11 @@ class motors:
 
 		self.steerGoal = 0 #-1.0 1.0
 		self.steerNow = 0 #-1.0 1.0
-		self.steerRange = 30
-		self.steerCenter = 90
+		self.steerRange = 40
+		self.steerCenter = 100
 
 	def regulate(self):
-		diff = self.steerGoal - self.steerNow
-		if diff > 0:
-			self.steerNow += 0.1
-			if self.steerNow > self.steerGoal:
-				self.steerNow = self.steerGoal
-		elif diff < 0:
-			self.steerNow -= 0.1
-			if self.steerNow < self.steerGoal:
-				self.steerNow = self.steerGoal
-		if diff != 0:
-			self.servoSteering.write_angle(int(self.steerNow * self.steerRange + self.steerCenter))
+		self.servoSteering.write_angle(int(self.steerGoal * self.steerRange + self.steerCenter))
 
 		diff = (self.speedGoal * -1) - self.speedNow
 		if diff > 0:
@@ -101,7 +100,9 @@ class trk01:
 		self.sensors = None
 		del sys.modules['trk01']
 		#del trk01
-		#del t
+
+	def decide(self):
+		self.motors.steerGoal = self.sensors.distanceCenterEscalated
 
 	def run(self):
 		run = True
@@ -110,6 +111,7 @@ class trk01:
 				d = time.ticks_ms()
 				self.sensors.read()
 				self.sensors.analyze()
+				self.decide()
 				self.motors.regulate()
 				time.sleep(0.1)
 			except KeyboardInterrupt:
