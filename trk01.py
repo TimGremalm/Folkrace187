@@ -29,13 +29,14 @@ class sensors:
 		self.distanceFront = 0
 		self.distanceRight = 0
 		
-		self.distanceIgnore = 100
+		self.distanceIgnore = 220
+		self.distanceIgnoreMin = 75
 		self.distanceCenter = 0
 		self.distanceCenterEscalated = 0
 
 		self.distanceAccelerate = 200
 		self.accelerateSpeed = 0
-		self.stopAtDistance = 100
+		self.stopAtDistance = 70
 		self.startAtDistance = 100
 		
 		#D7=GPIO13, D8=GPIO15
@@ -58,17 +59,22 @@ class sensors:
 
 	def analyze(self):
 		#Cut of distances longer then 200mm
+		#79 - 250
+		#
 		diff = min(self.distanceRight, self.distanceIgnore) - min(self.distanceLeft, self.distanceIgnore)
 		diffAbs = diff
 		if diff < 0:
 			diffAbs = diffAbs * -1
-		self.distanceCenter = float(diffAbs) / self.distanceIgnore
+		self.distanceCenter = float(diffAbs) / (self.distanceIgnore - self.distanceIgnoreMin)
 		self.distanceCenterEscalated = math.sqrt(self.distanceCenter)
 		if diff < 0:
 			self.distanceCenter = self.distanceCenter * -1
 			self.distanceCenterEscalated = self.distanceCenterEscalated * -1
 		#print('Center %f' % self.distanceCenter)
-		#print('Center Escalated %f' % self.distanceCenterEscalated)
+		print('Center Escalated %f' % self.distanceCenterEscalated)
+		#self.__str()
+		
+		
 		self.accelerateSpeed = min(self.distanceFront, self.distanceAccelerate) / self.distanceAccelerate
 		#print('Distance accelerate %f %d' % (self.accelerateSpeed, self.distanceFront))
 
@@ -89,8 +95,8 @@ class motors:
 
 		self.steerGoal = 0 #-1.0 1.0
 		self.steerNow = 0 #-1.0 1.0
-		self.steerRange = 50
-		self.steerCenter = 90
+		self.steerRange = 40
+		self.steerCenter = 100
 
 	def regulate(self):
 		self.servoSteering.write_angle(int(self.steerGoal * self.steerRange + self.steerCenter))
