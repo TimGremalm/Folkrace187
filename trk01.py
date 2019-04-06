@@ -10,6 +10,9 @@ forward = 1
 backward = 4
 backwardleft = 5
 backwardright = 6
+smpowered = 0
+smstart = 1
+smstopped = 2
 
 class sensors:
 	def __init__(self):
@@ -26,7 +29,7 @@ class sensors:
 		self.distanceFront = 0
 		self.distanceRight = 0
 		
-		self.distanceIgnore = 150
+		self.distanceIgnore = 100
 		self.distanceCenter = 0
 		self.distanceCenterEscalated = 0
 
@@ -34,11 +37,24 @@ class sensors:
 		self.accelerateSpeed = 0
 		self.stopAtDistance = 100
 		self.startAtDistance = 100
+		
+		#D7=GPIO13, D8=GPIO15
+		self.startmodulePinStart = machine.Pin(13, machine.Pin.IN)
+		self.aa = machine.Pin(15, machine.Pin.IN)
+		self.startModuleState = smpowered
 
 	def read(self):
 		self.distanceLeft = self.vLeft.read()
 		self.distanceFront = self.vFront.read()
 		self.distanceRight = self.vRight.read()
+		s = self.startmodulePinStart.value()
+		k = self.aa.value()
+		if s == 0 and k == 1:
+			self.startModuleState = smpowered
+		elif s == 1 and k == 1:
+			self.startModuleState = smstart
+		elif s == 0 and k == 0:
+			self.startModuleState = smstopped
 
 	def analyze(self):
 		#Cut of distances longer then 200mm
@@ -74,7 +90,7 @@ class motors:
 		self.steerGoal = 0 #-1.0 1.0
 		self.steerNow = 0 #-1.0 1.0
 		self.steerRange = 50
-		self.steerCenter = 100
+		self.steerCenter = 90
 
 	def regulate(self):
 		self.servoSteering.write_angle(int(self.steerGoal * self.steerRange + self.steerCenter))
@@ -119,10 +135,16 @@ class trk01:
 	def decide(self):
 		state = self.events[-1][1]
 		if state==stopped:
-			if True: #Insert startmodule here
+			if self.sensors.startModuleState == smstart: #Triggered by startmodule
 				print('State to forward')
 				self.eventsAdd(forward)
 		elif state==forward:
+			if self.sensors.startModuleState == smstopped:
+				#Reset state and turn of motors
+				self.eventsAdd(stopped)
+				self.motors.speedGoal = 0
+				self.motors.disable()
+				return
 			if self.sensors.distanceFront < self.sensors.stopAtDistance:
 				#We must back out, do a avrage of previous turns to decide which turn to make
 				avragePreviousTurns = sum(self.turns) / len(self.turns)
@@ -134,6 +156,12 @@ class trk01:
 					print('State to backwardright')
 					self.eventsAdd(backwardright)
 		elif state==backward or state==backwardleft or state==backwardright:
+			if self.sensors.startModuleState == smstopped:
+				#Reset state and turn of motors
+				self.eventsAdd(stopped)
+				self.motors.speedGoal = 0
+				self.motors.disable()
+				return
 			if self.sensors.distanceFront > self.sensors.startAtDistance:
 				print('State to forward')
 				self.eventsAdd(forward)
@@ -145,6 +173,7 @@ class trk01:
 			self.motors.speedGoal = 0.0
 		elif state==forward:
 			self.motors.steerGoal = self.sensors.distanceCenterEscalated
+			#self.motors.steerGoal = self.sensors.distanceCenter
 			self.motors.speedGoal = self.sensors.accelerateSpeed
 			#Add turning for statistics
 			self.turnsAdd(self.motors.steerGoal)
@@ -179,3 +208,4 @@ class trk01:
 		self.eventsAdd(stopped)
 		self.motors.speedGoal = 0
 		self.motors.disable()
+		print('Exit run')
